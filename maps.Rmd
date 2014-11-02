@@ -1,0 +1,228 @@
+---
+title: "Untitled"
+author: "Matthew Upson"
+date: "31/10/2014"
+output:
+  html_document:
+    theme: spacelab
+  pdf_document: default
+---
+### Data Description:
+
+* Trip Duration (seconds)
+* Start Time and Date
+* Stop Time and Date
+* Start Station Name
+* End Station Name
+* Station ID
+* Station Lat/Long
+* Bike ID
+* User Type (Customer = 24-hour pass or 7-day pass user; Subscriber = Annual Member)
+* Gender (Zero=unknown; 1=male; 2=female)
+* Year of Birth
+
+```{r load_libraries,include=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+require(plyr)
+require(dplyr)
+require(lubridate)
+#require(testthat)
+#require(reshape2)
+require(ggplot2)
+require(ggmap)
+#require(randomForest)
+#require(xtable)
+```
+
+
+```{r load_stns,cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE,include=TRUE}
+
+nybikes_db <- src_sqlite(
+  "~/Dropbox/R/Citibike/nybikes.db"
+  )
+
+
+stns_sql <- # convert db table to R dataframe
+  tbl( # load a database table
+    nybikes_db,
+    sql("select * from stns")
+    )
+
+
+stns <- collect(stns_sql)
+
+```
+
+### Let's start by creating some maps:
+
+```{r ggmap12,cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE,include=TRUE}
+
+# calculate centre of all points
+centre <- c(
+  lon = mean(stns$lon),
+  lat = mean(stns$lat)
+  )
+
+
+nymap_12 <- get_map(
+     centre, 
+     scale = 2,
+     zoom = 12,
+     source = "google"
+)
+
+nymap_13 <- get_map(
+     centre, 
+     scale = 2,
+     zoom = 13,
+     source = "google"
+)
+
+ggmap(
+     nymap_12, 
+     extent = 'device',
+     legend="bottomright"
+) + 
+  geom_point(
+    data = stns,
+    aes(
+      x = lon,
+      y = lat
+      )
+    )
+```
+
+```{r ggmap13,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+ggmap(
+     nymap_13, 
+     extent = 'device',
+     legend="bottomright"
+) + 
+  geom_point(
+    data = stns,
+    aes(
+      x = lon,
+      y = lat
+      )
+    )
+
+```
+
+
+### Initial exploration
+
+Ok so now that we know where the stations are...let's do something with it! Let's start some of the very simple questions...
+
+```{r load_nybikes,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+
+nybikes_db <- src_sqlite(
+  "~/Dropbox/R/Citibike/nybikes.db"
+  )
+
+bikes_sql <- tbl( # load a database table
+    nybikes_db,
+    sql("select * from nybikes")
+    )
+
+bikes <- collect(bikes_sql)
+
+bikes <- bikes %>%
+  dplyr::mutate(
+    starttime = ymd_hms(starttime),
+    stoptime = ymd_hms(stoptime),
+    start_hash = factor(start_hash),
+    end_hash = factor(end_hash),
+    bikeid = factor(bikeid),
+    usertype = factor(usertype),
+    gender = factor(gender),
+    birth_year = ifelse(birth_year == "\\N",NA,birth_year),
+    gender = mapvalues(
+      gender, 
+      from = c(0,1,2), 
+      to = c(NA,"M","F"))
+    )
+
+```
+
+
+```{r,cache=TRUE}
+
+bla <- bikes %>% 
+  dplyr::filter(
+    !is.na(gender)
+    ) %>%
+  dplyr::group_by(
+    we = ifelse(
+      wday(stoptime) %in% c(1,7),
+      "Weekend",
+      "Weekday"
+      ),    
+    year = year(stoptime),
+    month = month(stoptime),
+    day = day(stoptime),
+    hash = as.character(end_hash),
+    gender
+    ) %>%
+  dplyr:: summarise(
+    obs = n()
+    ) %>% 
+  dplyr::group_by(
+    gender,
+    we,
+    hash,
+    add = FALSE
+    ) %>%
+  dplyr:: summarise(
+    nobs = length(obs),
+    obs = mean(obs)
+    ) %>% 
+  dplyr::left_join(
+    stns
+    )
+
+cuts <- (kmeans(bla$obs,2))$centers %>% c(.,0,max(bla$obs)) %>% sort(.) %>% round(.)
+
+bla <- bla %>%
+  dplyr::mutate(
+    obs_class = cut(obs,cuts)
+    )
+
+```
+
+```{r,cache=TRUE}
+
+ggmap(
+  nymap_13, 
+  extent = 'device',
+  legend="right"
+  )+
+  geom_point(
+    data = bla,
+    aes(
+      x = lon,
+      y = lat,
+      colour = obs_class
+      ),
+    size = 3,
+    alpha = 0.8
+    )+
+  stat_density2d(
+    data = bla,
+    aes(
+      x = lon,
+      y = lat,
+      z = obs
+      ),
+    alpha = 0.5,
+    width = 0.5,
+    colour = "black"
+    )+
+  scale_colour_brewer(
+    "Arrivals",
+    palette = "Set1"
+      )+facet_grid(
+    gender~we
+    )
+
+
+```
