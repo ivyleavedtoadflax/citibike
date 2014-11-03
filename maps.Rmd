@@ -113,34 +113,36 @@ ggmap(
 
 Ok so now that we know where the stations are...let's do something with it! Let's start some of the very simple questions...
 
-```{r load_nybikes,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+```{r load_nybikes,cache=FALSE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
 
-nybikes_db <- src_sqlite(
-  "~/Dropbox/R/Citibike/nybikes.db"
-  )
+load("bikes.RData")
 
-bikes_sql <- tbl( # load a database table
-    nybikes_db,
-    sql("select * from nybikes")
-    )
-
-bikes <- collect(bikes_sql)
-
-bikes <- bikes %>%
-  dplyr::mutate(
-    starttime = ymd_hms(starttime),
-    stoptime = ymd_hms(stoptime),
-    start_hash = factor(start_hash),
-    end_hash = factor(end_hash),
-    bikeid = factor(bikeid),
-    usertype = factor(usertype),
-    gender = factor(gender),
-    birth_year = ifelse(birth_year == "\\N",NA,birth_year),
-    gender = mapvalues(
-      gender, 
-      from = c(0,1,2), 
-      to = c(NA,"M","F"))
-    )
+# nybikes_db <- src_sqlite(
+#   "~/Dropbox/R/Citibike/nybikes.db"
+#   )
+# 
+# bikes_sql <- tbl( # load a database table
+#     nybikes_db,
+#     sql("select * from nybikes")
+#     )
+# 
+# bikes <- collect(bikes_sql)
+# 
+# bikes <- bikes %>%
+#   dplyr::mutate(
+#     starttime = ymd_hms(starttime),
+#     stoptime = ymd_hms(stoptime),
+#     start_hash = factor(start_hash),
+#     end_hash = factor(end_hash),
+#     bikeid = factor(bikeid),
+#     usertype = factor(usertype),
+#     gender = factor(gender),
+#     birth_year = ifelse(birth_year == "\\N",NA,birth_year),
+#     gender = mapvalues(
+#       gender, 
+#       from = c(0,1,2), 
+#       to = c(NA,"M","F"))
+#     )
 
 ```
 
@@ -189,7 +191,8 @@ bla <- bla %>%
 
 ```
 
-```{r,cache=TRUE}
+```{r,cache=TRUE,fig.width=10,fig.height=10}
+
 
 ggmap(
   nymap_13, 
@@ -206,23 +209,11 @@ ggmap(
     size = 3,
     alpha = 0.8
     )+
-  stat_density2d(
-    data = bla,
-    aes(
-      x = lon,
-      y = lat,
-      z = obs
-      ),
-    alpha = 0.5,
-    width = 0.5,
-    colour = "black"
-    )+
   scale_colour_brewer(
-    "Arrivals",
+    "Bike arrivals\nper day",
     palette = "Set1"
       )+facet_grid(
     gender~we
     )
-
 
 ```

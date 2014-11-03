@@ -1,0 +1,390 @@
+---
+title: "Is CitiBike an old boy's club?'"
+author: "Matthew Upson"
+date: "02/11/2014"
+output:
+  html_document:
+    theme: spacelab
+  pdf_document: default
+---
+
+```{r load_libraries,include=TRUE,echo=FALSE,message=FALSE,warning=FALSE,include=TRUE}
+require(plyr)
+require(dplyr)
+require(lubridate)
+#require(testthat)
+#require(reshape2)
+require(ggplot2)
+require(ggmap)
+#require(randomForest)
+require(xtable)
+
+load("bikes.RData")
+```
+
+### Gender differences
+
+Quite a lot has been made in the media of the gender differences among users of the New York Citibike scheme. There are two types of users: long-term `Subscribers` to the service, and short term `Customers` who might only buy a weekly pass. Limited information is collected from pass buyers, but `Subscribers` are asked for their gender and `birth_year`, so it is possible to drill into this question a little.
+
+Let's start with the basics. Of the `r nrow(bikes)` journeys recorded so-far, men made more than three times as many journeys as women.
+
+
+```{r gender_proportions,cache=FALSE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+
+# It is possible to call all the data from teh sql database, but much quicker to run it from an RData file
+
+bikes %>%
+  dplyr::group_by(
+    gender
+    ) %>%
+  dplyr::summarise(
+    count = n(),
+    prop = paste(round((n()/nrow(bikes))*100),"%")
+    )
+
+```
+
+Ok, so women have definitely using the service less since it started, but how has that changed over time?
+
+Looking at the plot below, you can see the seaonal did in users, but there's nothing to indicate that the pro
+
+```{r gender_month_plot,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+
+ggplot(
+  bla <- bikes %>%
+    dplyr::mutate(
+      my = format(starttime,"%Y-%m")
+      ) %>%
+    dplyr::group_by(
+      my
+      ) %>%
+    dplyr::mutate(
+      month_total = n()
+      ) %>%
+    dplyr::group_by(
+      gender,
+      add = TRUE
+      ) %>%
+    dplyr::mutate(
+      prop = (n()/month_total)*100
+      ) %>%
+    dplyr::summarise(
+      prop = mean(prop)
+      ),
+  aes(
+    x = my,
+    y = prop,
+    colour = gender,
+    group = gender
+    )
+  )+
+  geom_path()+
+  ylab("Proportion of users (%)")+
+  xlab("Year and Month")
+
+```
+
+
+```{r load_stns,cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE,include=TRUE}
+
+nybikes_db <- src_sqlite(
+  "~/Dropbox/R/Citibike/nybikes.db"
+  )
+
+
+stns_sql <- # convert db table to R dataframe
+  tbl( # load a database table
+    nybikes_db,
+    sql("select * from stns")
+    )
+
+
+stns <- collect(stns_sql)
+
+```
+
+
+### Initial exploration
+
+Ok so now that we know where the stations are...let's do something with it! Let's start some of the very simple questions...
+
+```{r load_nybikes,cache=FALSE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+
+# It is possible to call all the data from teh sql database, but much quicker to run it from an RData file
+
+load("bikes.RData")
+
+# nybikes_db <- src_sqlite(
+#   "~/Dropbox/R/Citibike/nybikes.db"
+#   )
+# 
+# bikes_sql <- tbl( # load a database table
+#     nybikes_db,
+#     sql('select * from nybikes')
+#     )
+# 
+# bikes <- collect(bikes_sql)
+# 
+# bikes <- bikes %>%
+#   dplyr::mutate(
+#     starttime = ymd_hms(starttime),
+#     stoptime = ymd_hms(stoptime),
+#     start_hash = factor(start_hash),
+#     end_hash = factor(end_hash),
+#     bikeid = factor(bikeid),
+#     usertype = factor(usertype),
+#     gender = factor(gender),
+#     birth_year = ifelse(
+#       birth_year == "\\N",
+#       NA,
+#       birth_year
+#       ),
+#     gender = mapvalues(
+#       gender, 
+#       from = c(0,1,2), 
+#       to = c(NA,"M","F"))
+#     )
+
+```
+
+### Some summary information...
+
+* The first recorded bike trip was on `r min(bikes$starttime)`, the last recorded trip was `r max(bikes$starttime)`. 
+* There are `r length(unique(bikes$bikeid))` individual bikes and `r length(unique(stns$hash))` base.
+* 
+
+```{r no_of_journeys_boxplot,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+ggplot(
+  bikes %>% 
+    dplyr::group_by(
+      bikeid,
+      year = year(starttime),
+      month = month(starttime) 
+      ) %>%
+    dplyr::summarise(
+      n = length(bikeid)
+      ),
+  aes(
+    y = n,
+    x = ordered(month),
+    fill = factor(year),
+    color = factor(year)
+    )
+  )+
+  geom_boxplot(
+    alpha = 0.3,
+    outlier.size = 0
+    )+
+  facet_wrap(~year)+ 
+  ylab("Number of journeys per bike")+
+  xlab("Month")
+  
+
+
+```
+
+## Some initial questions questions
+
+* Are there differences in the usage pattern of men and women?
+* Are there differences in the usage pattern of people of different ages?
+* Do subscribers and customers use the bikes in different ways?
+
+```{r number_of_journeys,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+ggplot(
+  bikes %>%
+    dplyr::group_by(
+      # Round date values to the nearest first day of the month    
+      year = ordered(year(starttime)),
+      month = ordered(month(starttime))
+      ) %>%
+    dplyr::summarise(
+      n = length(tripduration)
+      ),
+  aes(
+    x = month,
+    y = n,
+    colour = year,
+    group = year
+    )
+  )+
+geom_line()+
+  ylab(
+    "Number of journeys"
+    )+
+  scale_y_continuous(
+    labels = sprintf("%.0f",seq(20000,100000,20000))
+    )
+       
+
+```
+
+Starting with some simple questions:
+
+* Do women spend longer on bikes than men?
+* Are there differences in the number of subscribers among men and women?
+* Do women use bikes at difference hours than men?
+* What about on different days?
+
+```{r eval=TRUE,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+tapply(
+  bikes$tripduration,
+  bikes$gender,
+  median
+  )
+
+# Ok so it looks like men spend longer on the bikes, by median
+# But what proportion of users are women?
+
+tapply(
+  bikes$tripduration,
+  bikes$gender,
+  function(x) round(length(x)/nrow(bikes),2)
+  )
+
+
+#...let's plot this out
+# This is likely to be quite slow, so lets take a random subsample of say 100000 
+# journeys and use this to compute our density estimates
+```
+
+```{r trip_duration_density,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+ggplot(
+  data = bikes,
+  aes(
+    #y = tripduration,
+    x = tripduration,
+    colour = gender,
+    fill = gender,
+    )
+  ) + 
+  geom_density(
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)")
+
+# Ok so what about different days of the week?
+```
+
+```{r trip_duration_density_we,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+ggplot(
+  data = bikes %>%
+    dplyr::mutate(
+      wday = wday(stoptime),
+      we = ifelse(
+        (wday %in% c(1,7)),
+        "Weekend","Weekday"
+        )
+      ),
+  aes(
+    #y = tripduration,
+    x = tripduration,
+    colour = gender,
+    fill = gender
+    )
+  ) + 
+  geom_density(
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)") +
+  facet_wrap(
+    ~we
+    )
+```
+
+```{r tripdensity_we_age,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE,fig.width=14,fig.height=10}
+
+
+ggplot(
+  data = bikes %>%
+    dplyr::mutate(
+      wday = wday(stoptime),
+      we = ifelse(
+        (wday %in% c(1,7)),
+        "Weekend","Weekday"
+        ),
+      age = 2014 - as.numeric(birth_year),
+      age_group = cut(age,c(10,20,30,40,50,60,100))
+      ) %>%
+    dplyr::filter(
+      !is.na(age_group),
+      !is.na(gender)
+      ),
+  aes(
+    #y = tripduration,
+    x = tripduration,
+    colour = gender,
+    fill = gender
+    )
+  ) + 
+  geom_density(
+    aes(y= ..count..),
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)") +
+  facet_grid(
+    we~age_group
+    )+
+  ylab("Count")
+
+```
+
+
+```{r cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+## Ok so far so good...women use the bikes more at weekends and weekdays...
+
+ggplot(
+  data = bikes %>% 
+    dplyr::sample_n(
+      size = 100000,
+      replace = FALSE
+      ) %>%
+    dplyr::mutate(
+      wday = wday(stoptime),
+      we = ifelse(
+        (wday %in% c(1,7)),
+        "Weekend","Weekday"
+        )
+      ) %>%
+    dplyr::group_by(
+      gender,we
+      ) %>%
+    dplyr::summarise(
+      prop = round(length(we)/100000,2)
+      ),
+  aes(
+    #y = tripduration,
+    y = prop,
+    x = gender,
+    colour = gender,
+    fill = gender
+    )
+  ) + 
+  geom_bar(
+    alpha = 0.3,
+    stat = "identity"
+    ) +
+  facet_wrap(
+    ~we
+    ) + 
+  ylab("Proportion of total (sampled) journeys")
+
+
+```
+
+## New questions
+
+* There are so many few female journeys than male journeys - but women tend to spend longer on the bikes? Where are they going? Does this mean that they are NOT commuting as much?
+* Customer, as opposed to subscribers tend to have a longer journey duration. Who are these people? And where are they going? Can trends in when they make their journeys, and where they are going elucidate who these people are - are they tourists for instance?
