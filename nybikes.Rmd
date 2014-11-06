@@ -21,7 +21,7 @@ output:
 * Gender (Zero=unknown; 1=male; 2=female)
 * Year of Birth
 
-```{r,include=TRUE,echo=FALSE,message=FALSE,warning=FALSE}
+```{r load_libraries,include=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
 require(plyr)
 require(dplyr)
 require(lubridate)
@@ -33,16 +33,11 @@ require(ggmap)
 #require(xtable)
 ```
 
-## Some interesting questions
 
-* Are there differences in the usage pattern of men and women?
-* Are there differences in the usage pattern of people of different ages?
-* Do subscribers and customers use the bikes in different ways?
-
-```{r,cache=TRUE,echo=FALSE,warning=FALSE,message=FALSE}
+```{r load_stns,cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE,include=TRUE}
 
 nybikes_db <- src_sqlite(
-  "nybikes.db"
+  "~/Dropbox/R/Citibike/nybikes.db"
   )
 
 
@@ -57,112 +52,97 @@ stns <- collect(stns_sql)
 
 ```
 
-### Let's start by creating some maps:
-
-```{r,cache=TRUE,echo=FALSE,warning=FALSE,message=FALSE}
-
-# calculate centre of all points
-centre <- c(
-  lon = mean(stns$stn_long),
-  lat = mean(stns$stn_lat)
-  )
-
-
-nymap_12 <- get_map(
-     centre, 
-     scale = 2,
-     zoom = 12,
-     source = "google"
-)
-
-nymap_13 <- get_map(
-     centre, 
-     scale = 2,
-     zoom = 13,
-     source = "google"
-)
-
-ggmap(
-     nymap_12, 
-     extent = 'device',
-     legend="bottomright"
-) + 
-  geom_point(
-    data = stns,
-    aes(
-      x = stn_long,
-      y = stn_lat
-      )
-    )
-
-ggmap(
-     nymap_13, 
-     extent = 'device',
-     legend="bottomright"
-) + 
-  geom_point(
-    data = stns,
-    aes(
-      x = stn_long,
-      y = stn_lat
-      )
-    )
-
-```
 
 ### Initial exploration
 
 Ok so now that we know where the stations are...let's do something with it! Let's start some of the very simple questions...
 
-```{r,cache=TRUE,echo=FALSE,message=FALSE,warning=FALSE}
+```{r load_nybikes,cache=FALSE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
 
-nybikes_db <- src_sqlite(
-  "nybikes.db"
-  )
+# It is possible to call all the data from teh sql database, but much quicker to run it from an RData file
 
-bikes_sql <- tbl( # load a database table
-    nybikes_db,
-    sql("select * from nybikes")
-    )
+load("bikes.RData")
 
-bikes <- collect(bikes_sql)
-
-bikes <- bikes %>%
-  dplyr::mutate(
-    starttime = ymd_hms(starttime),
-    stoptime = ymd_hms(stoptime),
-    start_stn_id = factor(start_stn_id),
-    end_stn_id = factor(end_stn_id),
-    bikeid = factor(bikeid),
-    usertype = factor(usertype),
-    usertype = mapvalues(
-      usertype, 
-      from = levels(usertype), 
-      to = c("C","S")
-      ),
-    birth_year = ifelse("\\N",NA,birth_year),
-    gender = factor(gender),
-    gender = mapvalues(
-      gender, 
-      from = c(0,1,2), 
-      to = c(NA,"M","F"))
-    )
+# nybikes_db <- src_sqlite(
+#   "~/Dropbox/R/Citibike/nybikes.db"
+#   )
+# 
+# bikes_sql <- tbl( # load a database table
+#     nybikes_db,
+#     sql('select * from nybikes')
+#     )
+# 
+# bikes <- collect(bikes_sql)
+# 
+# bikes <- bikes %>%
+#   dplyr::mutate(
+#     starttime = ymd_hms(starttime),
+#     stoptime = ymd_hms(stoptime),
+#     start_hash = factor(start_hash),
+#     end_hash = factor(end_hash),
+#     bikeid = factor(bikeid),
+#     usertype = factor(usertype),
+#     gender = factor(gender),
+#     birth_year = ifelse(
+#       birth_year == "\\N",
+#       NA,
+#       birth_year
+#       ),
+#     gender = mapvalues(
+#       gender, 
+#       from = c(0,1,2), 
+#       to = c(NA,"M","F"))
+#     )
 
 ```
 
+### Some summary information...
+
+* The first recorded bike trip was on `r min(bikes$starttime)`, the last recorded trip was `r max(bikes$starttime)`. 
+* There are `r length(unique(bikes$bikeid))` individual bikes and `r length(unique(stns$hash))` base.
+* 
+
+```{r no_of_journeys_boxplot,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+ggplot(
+  bikes %>% 
+    dplyr::group_by(
+      bikeid,
+      year = year(starttime),
+      month = month(starttime) 
+      ) %>%
+    dplyr::summarise(
+      n = length(bikeid)
+      ),
+  aes(
+    y = n,
+    x = ordered(month),
+    fill = factor(year),
+    color = factor(year)
+    )
+  )+
+  geom_boxplot(
+    alpha = 0.3,
+    outlier.size = 0
+    )+
+  facet_wrap(~year)+ 
+  ylab("Number of journeys per bike")+
+  xlab("Month")
+  
 
 
+```
 
+## Some initial questions questions
 
-```{r,cache=FALSE}
+* Are there differences in the usage pattern of men and women?
+* Are there differences in the usage pattern of people of different ages?
+* Do subscribers and customers use the bikes in different ways?
 
+```{r number_of_journeys,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
 
 ggplot(
   bikes %>%
-    dplyr::sample_n(
-      100000,
-      replace = FALSE
-      ) %>%
     dplyr::group_by(
       # Round date values to the nearest first day of the month    
       year = ordered(year(starttime)),
@@ -174,11 +154,18 @@ ggplot(
   aes(
     x = month,
     y = n,
-    colour = year
+    colour = year,
+    group = year
     )
   )+
-  geom_path()
-
+geom_line()+
+  ylab(
+    "Number of journeys"
+    )+
+  scale_y_continuous(
+    labels = sprintf("%.0f",seq(20000,100000,20000))
+    )
+       
 
 ```
 
@@ -189,7 +176,7 @@ Starting with some simple questions:
 * Do women use bikes at difference hours than men?
 * What about on different days?
 
-```{r,cache=TRUE}
+```{r eval=TRUE,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
 
 tapply(
   bikes$tripduration,
@@ -210,19 +197,17 @@ tapply(
 #...let's plot this out
 # This is likely to be quite slow, so lets take a random subsample of say 100000 
 # journeys and use this to compute our density estimates
+```
 
+```{r trip_duration_density,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
 
 ggplot(
-  data = dplyr::sample_n(
-    bikes,
-    size = 100000,
-    replace = FALSE
-    ),
+  data = bikes,
   aes(
     #y = tripduration,
     x = tripduration,
     colour = gender,
-    fill = gender
+    fill = gender,
     )
   ) + 
   geom_density(
@@ -234,13 +219,11 @@ ggplot(
   xlab("Trip duration (s)")
 
 # Ok so what about different days of the week?
+```
 
+```{r trip_duration_density_we,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
 ggplot(
-  data = bikes %>% 
-    dplyr::sample_n(
-      size = 100000,
-      replace = FALSE
-      ) %>%
+  data = bikes %>%
     dplyr::mutate(
       wday = wday(stoptime),
       we = ifelse(
@@ -265,8 +248,50 @@ ggplot(
   facet_wrap(
     ~we
     )
+```
+
+```{r tripdensity_we_age,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE,fig.width=14,fig.height=10}
 
 
+ggplot(
+  data = bikes %>%
+    dplyr::mutate(
+      wday = wday(stoptime),
+      we = ifelse(
+        (wday %in% c(1,7)),
+        "Weekend","Weekday"
+        ),
+      age = 2014 - as.numeric(birth_year),
+      age_group = cut(age,c(10,20,30,40,50,60,100))
+      ) %>%
+    dplyr::filter(
+      !is.na(age_group),
+      !is.na(gender)
+      ),
+  aes(
+    #y = tripduration,
+    x = tripduration,
+    colour = gender,
+    fill = gender
+    )
+  ) + 
+  geom_density(
+    aes(y= ..count..),
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)") +
+  facet_grid(
+    we~age_group
+    )+
+  ylab("Count")
+
+```
+
+
+```{r cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
 ## Ok so far so good...women use the bikes more at weekends and weekdays...
 
 ggplot(

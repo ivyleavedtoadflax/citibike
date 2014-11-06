@@ -1,0 +1,250 @@
+---
+title: "Journeys"
+author: "Matthew Upson"
+date: "05/11/2014"
+output: html_document
+---
+
+```{r}
+
+```{r load_libraries,include=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+require(plyr)
+require(dplyr)
+require(lubridate)
+#require(testthat)
+#require(reshape2)
+require(ggplot2)
+require(ggmap)
+#require(randomForest)
+#require(xtable)
+require(digest)
+```
+
+
+```{r load_stns,cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE,include=TRUE}
+
+nybikes_db <- src_sqlite(
+  "~/Dropbox/R/Citibike/nybikes.db"
+  )
+
+
+stns_sql <- # convert db table to R dataframe
+  tbl( # load a database table
+    nybikes_db,
+    sql("select * from stns")
+    )
+
+
+stns <- collect(stns_sql)
+
+```
+
+
+```{r}
+load("bikes.RData")
+
+
+
+bla <- bikes %>%
+  dplyr::mutate(
+    journey = paste(
+      start_hash,
+      end_hash,
+      sep = ""
+      )
+    ) %>% 
+  dplyr::group_by(
+    gender,
+    start_hash,
+    end_hash,
+    journey
+    ) %>%
+  dplyr::summarise(
+    num = n(),
+    dur = mean(tripduration)
+    ) %>%
+  dplyr::arrange(
+    desc(num)
+    ) 
+
+
+# How many different journey combinations have people done?
+
+bla %>% 
+  dplyr::group_by(
+    journey,
+    add = FALSE
+    ) %>%
+  dplyr::summarise(
+    num = n()
+    ) %>%
+  dplyr::summarise(
+    num = n()
+    )
+
+#################
+
+bla1 <- bla %>%
+  dplyr::group_by() %>%
+  dplyr::filter(
+    !is.na(gender)
+    ) %>% dplyr::arrange(
+      journey,gender
+      ) %>% 
+  dplyr::mutate(
+    gender1 = c(
+      as.numeric(gender)[2:length(gender)], 
+      0
+      ),
+    gender2 = abs(as.numeric(gender)-gender1)
+    ) %>%
+  dplyr::filter(
+    gender2 == 1,
+    start_hash != end_hash
+    )
+  
+bla2 <- bla1 %>% 
+  dplyr::mutate(
+    start_hash = as.character(start_hash),
+    end_hash = as.character(end_hash)
+    )
+
+# left join in dplyr seems to fail here....
+# https://github.com/hadley/dplyr/issues/177
+
+bla3 <- merge(
+  bla2, 
+  stns, 
+  by.x = "start_hash", 
+  by.y = "hash" 
+  )
+
+
+bla4 <- tbl_df(
+  merge(
+    bla3, 
+    stns, 
+    by.x = "end_hash", 
+    by.y = "hash"
+    )
+  )
+
+bla5 <- bla4[1:2200,] %>%
+  dplyr::select(
+    end_hash,start_hash,
+    gender,journey,num,dur,
+    start_id = id.x,
+    start_name = name.x,
+    start_lat = lat.x,
+    start_lon = lon.x,
+    end_id = id.y,
+    end_name = name.y,
+    end_lat = lat.y,
+    end_lon = lon.y  
+    )
+
+bla5$dist <- NA
+bla5$est_dur <- NA
+
+for (i in 1:nrow(bla5)) {
+  
+  x <- mapdist(
+  from = c(
+    lon = bla5[i,"start_lon"], 
+    lat = bla5[i,"start_lat"]
+    ),
+  to = c(
+    lon = bla5[i,"end_lon"], 
+    lat = bla5[i,"end_lat"]
+    ),
+  mode = "bicycling"
+  )
+  
+  bla5[i,"dist"] <- x$km
+  bla5[i,"est_dur"] <- x$seconds
+  
+  }
+
+bla6 <- bla4[1:1000,] %>%
+  dplyr::select(
+    end_hash,start_hash,
+    gender,journey,num,dur,
+    start_id = id.x,
+    start_name = name.x,
+    start_lat = lat.x,
+    start_lon = lon.x,
+    end_id = id.y,
+    end_name = name.y,
+    end_lat = lat.y,
+    end_lon = lon.y  
+    )
+
+bla_dist <- mapdist(
+  from = bla6$start_name,
+  to = bla6$end_name,
+  mode = "bicycling"
+  )
+
+
+
+
+
+
+
+%>%
+  dplyr::mutate(
+    dist = paste((
+      mapdist(
+        from = c(
+          lon = start_lon, 
+          lat = start_lat
+          ),
+        to = c(
+          lon = end_lon, 
+          lat = end_lat
+          ),
+        mode = "bicycling"
+        )
+      )[,c(4,6)],collapse=","),
+    est_dur = as.numeric(strsplit(dist,",")[[1]][2]),
+    dist = as.numeric(strsplit(dist,",")[[1]][1])
+    )
+
+
+
+
+
+mapdist(
+  from = c(
+    lon = -73.96264404, 
+    lat = 40.71260486
+    ),
+  to = c(
+    lon = -73.981013, 
+    lat = 40.689888
+    ),
+  mode = "bicycling"
+  )
+
+
+
+a <- mapdist(
+  from = c(lon = -73.98101,lat = 40.68989),
+  to = c(lon = -73.97605, 40.74890),
+  mode = "bicycling"
+  )
+
+a$km
+a$seconds
+
+ggplot(
+  bla[1:50,],
+  aes(
+    x = gender,
+    y = num,
+    colour = journey
+    )
+  ) + geom_jitter()
+
+
+```
