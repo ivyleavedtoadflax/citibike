@@ -1,0 +1,537 @@
+---
+title: "Journeys"
+author: "Matthew Upson"
+date: "05/11/2014"
+output: html_document
+---
+
+```{r load_libraries,include=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+require(plyr)
+require(dplyr)
+require(lubridate)
+#require(testthat)
+#require(reshape2)
+require(ggplot2)
+require(ggmap)
+#require(randomForest)
+#require(xtable)
+#require(digest)
+```
+
+
+```{r load_stns,cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE,include=TRUE}
+
+nybikes_db <- src_sqlite(
+  "~/Dropbox/R/Citibike/nybikes.db"
+  )
+
+
+stns_sql <- # convert db table to R dataframe
+  tbl( # load a database table
+    nybikes_db,
+    sql("select * from stns")
+    )
+
+
+stns <- collect(stns_sql)
+
+```
+
+
+```{r}
+load("bikes.RData")
+
+bla <- bikes %>%
+  dplyr::mutate(
+    journey = paste(
+      start_hash,
+      end_hash,
+      sep = ""
+      )
+    ) %>% 
+  dplyr::group_by(
+    gender,
+    start_hash,
+    end_hash,
+    journey
+    ) %>%
+  dplyr::summarise(
+    num = n(),
+    dur = mean(tripduration)
+    ) %>%
+  dplyr::arrange(
+    desc(num)
+    ) 
+
+
+# How many different journey combinations have people done?
+
+bla %>% 
+  dplyr::group_by(
+    journey,
+    add = FALSE
+    ) %>%
+  dplyr::summarise(
+    num = n()
+    ) %>%
+  dplyr::summarise(
+    num = n()
+    )
+
+
+################
+
+# Create journey times tbl
+
+#### extract journey data to make a new table of distances and estimated journey times:
+
+journeys <- bla %>% 
+  dplyr::group_by() %>%
+  dplyr::mutate(
+    start_hash = as.character(start_hash),
+    end_hash = as.character(end_hash)
+    ) %>%
+  dplyr::group_by(
+    start_hash,
+    end_hash,
+    journey
+    ) %>%
+  dplyr::summarise(
+    nobs = n()
+)
+
+journeys1 <- merge(
+  journeys,
+  stns,
+  by.x = "start_hash",
+  by.y = "hash"
+  ) %>% 
+  merge(
+    .,
+    stns,
+    by.x = "end_hash",
+    by.y = "hash"
+    ) %>% 
+  dplyr::select(
+    journey,
+    start_hash,
+    start_id = id.x,
+    start_name = name.x,
+    start_lat = lat.x,
+    start_lon = lon.x,
+    end_id = id.y,
+    end_name = name.y,
+    end_lat = lat.y,
+    end_lon = lon.y
+    ) %>%
+  dplyr::sample_n(
+    2400,
+    replace = FALSE
+    )
+
+
+
+nrow(journeys1)
+
+#journeys1 <- journeys1[1:2,]
+
+# this doesn't work
+
+#fromx <-paste(journeys1$start_name,"New York, US",sep=",")[1:2]
+#toy <- paste(journeys1$end_name,"New York, US",sep=",")[1:2]
+
+fromx <- paste(journeys1$start_lat,journeys1$start_lon,sep=" ")
+toy <- paste(journeys1$end_lat,journeys1$end_lon,sep=" ")
+
+x <- mapdist(
+  from = fromx,
+  to = toy,
+  mode = "bicycling"
+  )
+save(x,file="mapdist.RData")
+
+
+
+# journey_times <- bla %>%
+#   dplyr::group_by(
+#     start_name,
+#     start_hash,
+#     start_lat,
+#     start_lon,
+#     end_name,
+#     end_hash,
+#     end_lat,
+#     end_lon,
+#     journey
+#     ) %>%
+#   dplyr::summarise(
+#     est_dur = mean(est_dur),
+#     dist = mean(dist),
+#     nobs = n()
+#     ) %>%
+#   dplyr::filter(
+#     !is.na(est_dur)
+#     )
+
+
+#################
+
+bla1 <- bla %>%
+  dplyr::group_by() %>%
+  dplyr::filter(
+    !is.na(gender)
+    ) %>% dplyr::arrange(
+      journey,gender
+      ) %>% 
+  dplyr::mutate(
+    gender1 = c(
+      as.numeric(gender)[2:length(gender)], 
+      0
+      ),
+    gender2 = abs(as.numeric(gender)-gender1)
+    ) %>%
+  dplyr::filter(
+    gender2 == 1,
+    start_hash != end_hash
+    )
+  
+bla2 <- bla1 %>% 
+  dplyr::mutate(
+    start_hash = as.character(start_hash),
+    end_hash = as.character(end_hash)
+    )
+
+# left join in dplyr seems to fail here....
+# https://github.com/hadley/dplyr/issues/177
+
+bla3 <- merge(
+  bla2, 
+  stns, 
+  by.x = "start_hash", 
+  by.y = "hash" 
+  )
+
+
+bla4 <- tbl_df(
+  merge(
+    bla3, 
+    stns, 
+    by.x = "end_hash", 
+    by.y = "hash"
+    )
+  )
+
+bla5 <- bla4[1:2200,] %>%
+  dplyr::select(
+    end_hash,start_hash,
+    gender,journey,num,dur,
+    start_id = id.x,
+    start_name = name.x,
+    start_lat = lat.x,
+    start_lon = lon.x,
+    end_id = id.y,
+    end_name = name.y,
+    end_lat = lat.y,
+    end_lon = lon.y  
+    )
+
+
+```
+
+```{r}
+
+load("bla5.RData")
+
+ 
+#save(journey_times,file="google_journey_times.RData")
+
+
+#####
+
+bla6 <- bla5 %>%
+  dplyr::select(
+    -start_id,-end_id
+    ) %>%
+  dplyr::mutate(
+    diff = (est_dur - dur)
+    ) %>%
+  dplyr::filter(
+    #diff < 2000,
+    #diff > -2000
+    # observed is less than expected - they must be gonding straight to the destination station!
+    end_hash == "00eb16",
+    dur < est_dur
+    )
+
+plot(
+  bla6$diff, 
+  type = "h"
+  )
+
+
+
+bla6 %>% 
+  dplyr::group_by(
+    end_hash,gender
+    ) %>%
+  dplyr::summarise(
+    mean = mean(dur),
+    obs = n()
+    )
+
+ggplot(
+  bla6 %>%
+    dplyr::filter(
+      end_hash == "00eb16"
+      ),
+  aes(
+    x = dur,
+    y = est_dur,
+    color = gender
+    )
+  )+
+  geom_point()+
+  scale_x_continuous(
+    limits = c(0,3000)
+    )+
+  geom_smooth()
+
+
+```
+
+```{r}
+
+# bla5$dist <- NA
+# bla5$est_dur <- NA
+# 
+# for (i in 1:nrow(bla5)) {
+#   
+#   x <- mapdist(
+#   from = c(
+#     lon = bla5[i,"start_lon"], 
+#     lat = bla5[i,"start_lat"]
+#     ),
+#   to = c(
+#     lon = bla5[i,"end_lon"], 
+#     lat = bla5[i,"end_lat"]
+#     ),
+#   mode = "bicycling"
+#   )
+#   
+#   bla5[i,"dist"] <- x$km
+#   bla5[i,"est_dur"] <- x$seconds
+#   
+#   }
+# 
+# bla6 <- bla4[1:1000,] %>%
+#   dplyr::select(
+#     end_hash,start_hash,
+#     gender,journey,num,dur,
+#     start_id = id.x,
+#     start_name = name.x,
+#     start_lat = lat.x,
+#     start_lon = lon.x,
+#     end_id = id.y,
+#     end_name = name.y,
+#     end_lat = lat.y,
+#     end_lon = lon.y  
+#     )
+# 
+# bla_dist <- mapdist(
+#   from = bla6$start_name,
+#   to = bla6$end_name,
+#   mode = "bicycling"
+#   )
+
+
+
+
+
+
+
+# %>%
+#   dplyr::mutate(
+#     dist = paste((
+#       mapdist(
+#         from = c(
+#           lon = start_lon, 
+#           lat = start_lat
+#           ),
+#         to = c(
+#           lon = end_lon, 
+#           lat = end_lat
+#           ),
+#         mode = "bicycling"
+#         )
+#       )[,c(4,6)],collapse=","),
+#     est_dur = as.numeric(strsplit(dist,",")[[1]][2]),
+#     dist = as.numeric(strsplit(dist,",")[[1]][1])
+#     )
+# 
+# 
+
+
+
+# mapdist(
+#   from = c(
+#     lon = -73.96264404, 
+#     lat = 40.71260486
+#     ),
+#   to = c(
+#     lon = -73.981013, 
+#     lat = 40.689888
+#     ),
+#   mode = "bicycling"
+#   )
+# 
+# 
+# 
+# a <- mapdist(
+#   from = c(lon = -73.98101,lat = 40.68989),
+#   to = c(lon = -73.97605, 40.74890),
+#   mode = "bicycling"
+#   )
+# 
+# a$km
+# a$seconds
+# 
+# ggplot(
+#   bla[1:50,],
+#   aes(
+#     x = gender,
+#     y = num,
+#     colour = journey
+#     )
+#   ) + geom_jitter()
+
+
+```
+
+# Trying again to keep date involved
+
+```{r}
+
+bla <- bikes %>%
+  dplyr::filter(
+    end_hash != start_hash
+    ) %>%
+  dplyr::mutate(
+    journey = paste(
+      start_hash,
+      end_hash,
+      sep = ""
+      ),
+    date = round_date(
+      starttime,
+      "hour"
+      )
+    ) %>% 
+  dplyr::group_by(
+    gender,
+    start_hash,
+    end_hash,
+    journey,
+    date
+    ) %>%
+  dplyr::summarise(
+    num = n(),
+    dur = mean(tripduration)
+    ) %>%
+  dplyr::arrange(
+    desc(num)
+    ) 
+
+
+save(bla,file="bla_with_hour.RData")
+# 
+# # How many different journey combinations have people done?
+
+x <- bla %>% 
+  dplyr::group_by(
+    journey,
+    add = FALSE
+    ) %>%
+  dplyr::summarise(
+    num = n()
+    ) %>%
+  dplyr::summarise(
+    num = n()
+    )
+
+# out of a possible 
+
+y <- length(unique(bla$start_hash))^2
+
+# which is what proportion of the ttoal possibilities?
+
+x/y
+
+
+# 
+# #################
+# 
+bla1 <- bla %>%
+  dplyr::group_by() %>%
+  dplyr::filter(
+    !is.na(gender)
+    ) %>% dplyr::arrange(
+      journey,gender
+      ) %>% 
+  dplyr::mutate(
+    gender1 = c(
+      as.numeric(gender)[2:length(gender)], 
+      0
+      ),
+    gender2 = abs(as.numeric(gender)-gender1)
+    ) %>%
+  dplyr::filter(
+    gender2 == 1
+    ) %>%
+  dplyr::select(
+    -gender1,
+    -gender2
+    )
+#   
+# bla2 <- bla1 %>% 
+#   dplyr::mutate(
+#     start_hash = as.character(start_hash),
+#     end_hash = as.character(end_hash)
+#     )
+# 
+# # left join in dplyr seems to fail here....
+# # https://github.com/hadley/dplyr/issues/177
+# 
+# bla3 <- merge(
+#   bla2, 
+#   stns, 
+#   by.x = "start_hash", 
+#   by.y = "hash" 
+#   )
+# 
+# 
+# bla4 <- tbl_df(
+#   merge(
+#     bla3, 
+#     stns, 
+#     by.x = "end_hash", 
+#     by.y = "hash"
+#     )
+#   )
+# 
+# bla5 <- bla4[1:2200,] %>%
+#   dplyr::select(
+#     end_hash,start_hash,
+#     gender,journey,num,dur,
+#     start_id = id.x,
+#     start_name = name.x,
+#     start_lat = lat.x,
+#     start_lon = lon.x,
+#     end_id = id.y,
+#     end_name = name.y,
+#     end_lat = lat.y,
+#     end_lon = lon.y  
+#     )
+# 
+# 
+
+```
