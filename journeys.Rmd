@@ -22,7 +22,7 @@ require(ggmap)
 ```{r load_stns,cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE,include=TRUE}
 
 nybikes_db <- src_sqlite(
-  "~/Dropbox/R/Citibike/nybikes.db"
+  "../../R/Citibike/nybikes.db"
   )
 
 
@@ -38,7 +38,7 @@ stns <- collect(stns_sql)
 ```
 
 
-```{r}
+```{r eval=FALSE}
 # Load the full bikes dataframe
 
 load("bikes.RData")
@@ -75,6 +75,9 @@ bla <- bikes %>%
     desc(num)
     ) 
 
+```
+
+```{r eval=FALSE}
 # How many different journey combinations have people done?
 
 bla %>% 
@@ -112,63 +115,63 @@ journeys <- bla %>%
     nobs = n()
 )
 
-journeys1 <- merge(
-  journeys,
-  stns,
-  by.x = "start_hash",
-  by.y = "hash"
-  ) %>% 
-  merge(
-    .,
-    stns,
-    by.x = "end_hash",
-    by.y = "hash"
-    ) %>% 
-  dplyr::select(
-    journey,
-    start_hash,
-    start_id = id.x,
-    start_name = name.x,
-    start_lat = lat.x,
-    start_lon = lon.x,
-    end_id = id.y,
-    end_name = name.y,
-    end_lat = lat.y,
-    end_lon = lon.y
-    ) %>%
-  dplyr::sample_n(
-    1000,
-    replace = FALSE
-    )
+# journeys1 <- merge(
+#   journeys,
+#   stns,
+#   by.x = "start_hash",
+#   by.y = "hash"
+#   ) %>% 
+#   merge(
+#     .,
+#     stns,
+#     by.x = "end_hash",
+#     by.y = "hash"
+#     ) %>% 
+#   dplyr::select(
+#     journey,
+#     start_hash,
+#     start_id = id.x,
+#     start_name = name.x,
+#     start_lat = lat.x,
+#     start_lon = lon.x,
+#     end_id = id.y,
+#     end_name = name.y,
+#     end_lat = lat.y,
+#     end_lon = lon.y
+#     ) %>%
+#   dplyr::sample_n(
+#     2500,
+#     replace = FALSE
+#     )
 
 ```
 
-```{r, eval = FALSE}
+```{r, eval=FALSE}
 
 # look up mapdist data from google
 
-nrow(journeys1)
+#nrow(journeys1)
 
-fromx <- paste(journeys1$start_lat,journeys1$start_lon,sep=" ")
-toy <- paste(journeys1$end_lat,journeys1$end_lon,sep=" ")
-
-journey_times <- mapdist(
-  from = fromx,
-  to = toy,
-  mode = "bicycling"
-  )
-
-
-
-journeys1 <- tbl_df(
-  cbind(
-    journeys1,
-    journey_times
-    )
-  )  %>%  
-  dplyr::select(
-    -from,-to,-km,-miles,-minutes,-hours
-    )
+# fromx <- paste(journeys1$start_lat,journeys1$start_lon,sep=" ")
+# toy <- paste(journeys1$end_lat,journeys1$end_lon,sep=" ")
+# 
+# journey_times <- mapdist(
+#   from = fromx,
+#   to = toy,
+#   mode = "bicycling"
+#   )
+# 
+# 
+# 
+# journeys1 <- tbl_df(
+#   cbind(
+#     journeys1,
+#     journey_times
+#     )
+#   )  %>%  
+#   dplyr::select(
+#     -from,-to,-km,-miles,-minutes,-hours
+#     )
 
 #save(journeys1,file="journeys1.RData")
 
@@ -176,29 +179,40 @@ journeys1 <- tbl_df(
 
 ```
 
-```{r}
+```{r,fig.width=12,fig.height=12}
 
-bikes_journey_join <- bla %>%
-  inner_join(
-    journeys1,
-    by =  "journey"
-    ) %>%
-  group_by() 
+#load("journeys1.RData")
+
+# bikes_journey_join <- bla %>%
+#   inner_join(
+#     journeys1,
+#     by =  "journey"
+#     ) %>%
+#   group_by() 
+
+# save(
+#   bikes_journey_join, 
+#   file = "bikes_journey_join.RData"
+#   )
+
+load("bikes_journey_join.RData")
+
+bla1 <- bikes_journey_join %>%
+  mutate(
+    hour = hour(time),
+    we = ifelse(
+      (wday(time) %in% c(1,7)),
+      "Weekend",
+      "Weekday"
+      )
+    )
 
 ggplot(
-  data = bikes_journey_join %>%
-    filter(
+  data = bla1 %>%
+    dplyr::filter(
       !is.na(gender),
-      dur < seconds,
+      dur <= seconds,
       dur < 10000
-      ) %>%
-    mutate(
-      hour = hour(time),
-      we = ifelse(
-        (wday(time) %in% c(1,7)),
-        "Weekend",
-        "Weekday"
-        )
       ),
   aes(
     x = seconds,
@@ -206,23 +220,32 @@ ggplot(
     color = gender
     )
   )+
-  geom_point()+
+  geom_point(alpha = 0.3)+
+  geom_point(
+    data = bla1 %>%
+      dplyr::filter(
+        !is.na(gender),
+        dur > seconds,
+        dur < 5000
+        ),
+    alpha = 0.01
+    )+
+  geom_abline(
+    aes(
+      a = 1,
+      b = 1
+      )
+    )+
   facet_wrap(~hour)
 
+
+
 ggplot(
-  data = bikes_journey_join %>%
-    filter(
+  data = bla1 %>%
+    dplyr::filter(
       !is.na(gender),
-      dur < seconds,
-      dur < 10000
-      ) %>%
-    mutate(
-      hour = hour(time),
-      we = ifelse(
-        (wday(time) %in% c(1,7)),
-        "Weekend",
-        "Weekday"
-        )
+      dur <= seconds,
+      dur < 5000
       ),
   aes(
     x = seconds,
@@ -230,8 +253,24 @@ ggplot(
     color = gender
     )
   )+
-  geom_point()+
+  geom_point(alpha = 0.3)+
+  geom_point(
+    data = bla1 %>%
+      dplyr::filter(
+        !is.na(gender),
+        dur > seconds,
+        dur < 10000
+        ),
+    alpha = 0.01
+    )+
+  geom_abline(
+        aes(
+      a = 1,
+      b = 1
+      )
+    )+
   facet_wrap(~we)
+
 
 ggplot(
   data = bikes_journey_join %>%
@@ -253,8 +292,16 @@ ggplot(
     color = gender
     )
   )+
-  geom_point()+
-  geom_smooth(method = "lm")
+  geom_point(
+    alpha = 0.2
+    )+
+  geom_smooth(method = "lm")+
+  geom_abline(
+        aes(
+      a = 1,
+      b = 1
+      )
+    )
 
 # 
 # bla1 <- bla %>%
@@ -319,7 +366,7 @@ ggplot(
 
 ```
 
-```{r}
+```{r,eval=FALSE}
 
 load("bla5.RData")
 
@@ -490,7 +537,7 @@ ggplot(
 
 # Trying again to keep date involved
 
-```{r}
+```{r,eval=FALSE}
 
 bla <- bikes %>%
   dplyr::filter(
