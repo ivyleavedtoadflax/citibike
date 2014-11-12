@@ -22,9 +22,11 @@ require(xtable)
 load("bikes.RData")
 ```
 
-### Gender differences
+One of the first things you notice when drilling down into the New York Citibike data, is that there are a lot more male users than female. It's quite a striking difference between the sexes, and has been picked up in the [media](http://nypost.com/2014/05/09/majority-of-citi-bike-users-are-men-study/). In this post I'm going to look at the way Citibike usage differs across the sexes.
 
-Quite a lot has been made in the media of the gender differences among users of the New York Citibike scheme. There are two types of users: long-term `Subscribers` to the service, and short term `Customers` who might only buy a weekly pass. Limited information is collected from pass buyers, but `Subscribers` are asked for their gender and `birth_year`, so it is possible to drill into this question a little.
+There are two types of Citibike users: long-term `Subscribers` to the service, and short term `Customers` who might only buy a weekly pass. Limited information is collected from pass buyers, but `Subscribers` are asked for their gender and `birth_year`, so it is possible to drill into this question a little.
+
+### Proportion of users
 
 Let's start with the basics. Of the `r nrow(bikes)` journeys recorded so-far, men made more than three times as many journeys as women.
 
@@ -44,11 +46,11 @@ bikes %>%
 
 ```
 
-Ok, so women have definitely using the service less since it started, but how has that changed over time?
+So women have definitely been using the service less, but perhaps they have been slower to adopt the scheme? How is the proportion of total users from each sex changing over time?
 
-Looking at the plot below, you can see the seaonal did in users, but there's nothing to indicate that the pro
+Looking at the plot below, you can see the seasonal dip in short term pass users over winter (the grey region), and a consequent increase in the proportion of male users, but the proportion of female users is fairly constant at around 20%.
 
-```{r gender_month_plot,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+```{r gender_month_plot,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE,fig.width=9}
 
 ggplot(
   bla <- bikes %>%
@@ -74,15 +76,151 @@ ggplot(
   aes(
     x = my,
     y = prop,
-    colour = gender,
-    group = gender
+    fill = gender,
+    group = gender,
+    colour = gender
     )
   )+
-  geom_path()+
+  geom_area(
+    alpha = 0.3
+    )+
   ylab("Proportion of users (%)")+
   xlab("Year and Month")
 
 ```
+
+Since many people seem to use Citibikes to get to work Monday - Friday, usage patterns may change at the weekend...
+
+```{r gender_month_plot,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE,fig.width=9}
+
+ggplot(
+  bikes %>%
+    dplyr::mutate(
+      my = format(starttime,"%Y-%m"),
+      wday = wday(starttime),
+      we = ifelse(
+        wday %in% c(1,7),
+        "Weekend",
+        "Weekday"
+        )
+      ) %>%
+    dplyr::group_by(
+      my,
+      we
+      ) %>%
+    dplyr::mutate(
+      month_total = n()
+      ) %>%
+    dplyr::group_by(
+      gender,
+      add = TRUE
+      ) %>%
+    dplyr::mutate(
+      prop = (n()/month_total)*100
+      ) %>%
+    dplyr::summarise(
+      prop = mean(prop)
+      ),
+  aes(
+    x = my,
+    y = prop,
+    fill = gender,
+    group = gender,
+    colour = gender
+    )
+  )+
+  geom_area(
+    alpha = 0.3
+    )+
+  ylab("Proportion of users (%)")+
+  xlab("Year and Month")+
+  facet_wrap(
+    ~we
+    )
+
+```
+
+While there looks to be an increase in the proportion of `Customers` -- short term pass holders at the weekend, especially in the summer months, the overall proportion of female riders remains fairl constant at around 20%.
+
+### Journey times
+
+So we now know that men use Citibikes proportionally more than women, but is the way that they are using the bikes different? One of the other variables in the dataset, is journey time (`tripduration`) in seconds, this is a good start. Let's start with the numbers:
+
+```{r}
+
+bikes %>%
+  dplyr::group_by(
+    gender
+    ) %>%
+  dplyr::summarise(
+    mean = round(mean(tripduration)),
+    median = median(tripduration)
+    )
+
+```
+
+So from a simple mean and median, it looks like womens' journeys tend to be longer than mens', but both are much shorter than then `NA`s - the unknowns which relate to short term pass holders, for whom data is not recorded. It is also clear that there is some serious skew to the distributions of journeys times, as the medians are not particularly close to the means.
+
+Let's look at these probability distributions (note that for clarity I have trimmed the data to journeys of less than 3000 seconds or 50 minutes, as the vast majority of journeys are less than this).
+
+```{r trip_duration_density,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+ggplot(
+  data = bikes,
+  aes(
+    x = tripduration,
+    colour = gender,
+    fill = gender,
+    )
+  ) + 
+  geom_density(
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)")
+
+```
+
+OK...so this is looking a bit more interesting. Two things come out of this plot. Firstly it is clear that the distribution of female journey times matches fairly closely to the distribution of male journey times: most journeys take less than around 500 seconds (about 8 minutes and 20 seconds) - although most female journeys take longer than most male journeys:
+
+
+```{r trip_duration_density,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+ggplot(
+  data = bikes,
+  aes(
+    x = tripduration,
+    colour = gender,
+    fill = gender,
+    )
+  ) + 
+  geom_density(
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)") +
+  coord_cartesian(
+    xlim = c(0,750),
+    ylim = c(0.001,0.0014)
+    )
+
+```
+
+
+There is much a lag to the curve compared to the male curve, and in general, female journey times are longer than male journey times. Of equal interest is the fact that the unknowns - represented by the grey shading - show a markedly different distribution. Although skewed, the distribution is much more symmetrical, with the most common journey time around 1250 seconds.
+
+This suggests a markedly different pattern of use among customers buying short term passes for Citibikes. This makes sense, as the assumption would be that someone paying a subscription to Citibike is using the service regularly -- i.e. commuting, whilst short term pass buyers are more likely to be occasional users or tourists. This is something we can explore in more detail.
+
+
+
+
+
+Returning to the gender question for now though: so why is it that journey times among women tend to be longer than men. Are women going on longer journeys than men, or do they just ride slower?
+
 
 
 ```{r load_stns,cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE,include=TRUE}
@@ -250,27 +388,7 @@ tapply(
 # journeys and use this to compute our density estimates
 ```
 
-```{r trip_duration_density,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
 
-ggplot(
-  data = bikes,
-  aes(
-    #y = tripduration,
-    x = tripduration,
-    colour = gender,
-    fill = gender,
-    )
-  ) + 
-  geom_density(
-    alpha = 0.3
-    ) +
-  scale_x_continuous(
-    limits = c(0,3000)
-    ) +
-  xlab("Trip duration (s)")
-
-# Ok so what about different days of the week?
-```
 
 ```{r trip_duration_density_we,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
 ggplot(

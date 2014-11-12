@@ -9,3 +9,4 @@
 *.pdf
 *_cache*
 *_files*
+.Rproj.user
