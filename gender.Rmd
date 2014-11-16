@@ -91,7 +91,7 @@ ggplot(
 
 Since many people seem to use Citibikes to get to work Monday - Friday, usage patterns may change at the weekend...
 
-```{r gender_month_plot,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE,fig.width=9}
+```{r gender_month_plot1,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE,fig.width=9}
 
 ggplot(
   bikes %>%
@@ -163,7 +163,7 @@ So from a simple mean and median, it looks like womens' journeys tend to be long
 
 Let's look at these probability distributions (note that for clarity I have trimmed the data to journeys of less than 3000 seconds or 50 minutes, as the vast majority of journeys are less than this).
 
-```{r trip_duration_density,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+```{r trip_duration_density1,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
 
 ggplot(
   data = bikes,
@@ -215,15 +215,174 @@ There is much a lag to the curve compared to the male curve, and in general, fem
 
 This suggests a markedly different pattern of use among customers buying short term passes for Citibikes. This makes sense, as the assumption would be that someone paying a subscription to Citibike is using the service regularly -- i.e. commuting, whilst short term pass buyers are more likely to be occasional users or tourists. This is something we can explore in more detail.
 
+Knowing that weekends show a different pattern of usage, how does trip duration differ?
+
+```{r}
+
+bikes %>%
+  dplyr::group_by(
+    gender,
+    we = ifelse(
+      wday(starttime) %in% c(1,7),
+      "Weekend",
+      "Weekday"
+      )
+    ) %>%
+  dplyr::summarise(
+    mean = round(mean(tripduration)),
+    median = median(tripduration)
+    )
+
+```
+
+So journey times tend to be longer across the board - what about the distributions? 
+
+```{r trip_duration_density_we,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+ggplot(
+  data = bikes %>%
+    dplyr::mutate(
+      wday = wday(stoptime),
+      we = ifelse(
+        (wday %in% c(1,7)),
+        "Weekend",
+        "Weekday"
+        )
+      ),
+  aes(
+    x = tripduration,
+    colour = gender,
+    fill = gender
+    )
+  ) + 
+  geom_density(
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)") +
+  facet_wrap(
+    ~we
+    )
+
+```
+
+So yes, as we might expect, people tend to either take longer journeys, or travel at a more leisurely pace at the weekend, or both.
+
+One of the other variable recorded among regular subscribers, is year of birth. How does this affect things? In this case I've cut the data into bins of 0-10, 10-20, 20-30, 30-40, 40-50, 50-60, and 60-100 years; and again considered both weekdays and weekends. In this probabilitys, distribution, I have presented absolute values instead of probabilities, so you get a sense of the number of journeys within each group.
 
 
+```{r tripdensity_we_age,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE,fig.width=14,fig.height=10}
 
+
+ggplot(
+  data = bikes %>%
+    dplyr::mutate(
+      wday = wday(stoptime),
+      we = ifelse(
+        (wday %in% c(1,7)),
+        "Weekend","Weekday"
+        ),
+      age = 2014 - as.numeric(birth_year),
+      age_group = cut(age,c(10,20,30,40,50,60,100))
+      ) %>%
+    dplyr::filter(
+      !is.na(age_group),
+      !is.na(gender)
+      ),
+  aes(
+    #y = tripduration,
+    x = tripduration,
+    colour = gender,
+    fill = gender
+    )
+  ) + 
+  geom_density(
+    aes(y= ..count..),
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)") +
+  facet_grid(
+    we~age_group
+    )+
+  ylab("Count")
+
+```
+
+At the weekend, many fewer people travel, and the distribution of journey times is less strongly peaked. All commonsense if we accept the idea that most people who use citibike are doing so to commute.
 
 Returning to the gender question for now though: so why is it that journey times among women tend to be longer than men. Are women going on longer journeys than men, or do they just ride slower?
 
+This is a difficult question to answer. Whilst it is easier to know whether the journey time from A to B is longer for men or women, it is not easy to know if the journey was direct. We could simply average it, and hope for the best; given 11 million records, this would probably be good enough, but there is another way making use of the google maps api.
+
+The google maps api can be queried for distance and cycling journey time between two points. By using this method for a subsample of journeys, we can filter those journeys which take less time than google suggests it should take, hence we can be more sure (although not absolutely so) that these journeys were direct. We can then have a look at the differences between journey times for men and women.
+
+### Step One
+
+Aggregate all observation by the journey made, and the hour when it was made:
+
+```{r, eval=FALSE,echo=TRUE,include=TRUE}
+
+biks_agg <- bikes %>%
+  dplyr::mutate(
+    journey = paste(
+      start_hash,
+      end_hash,
+      sep = ""
+      ),
+    time = round_date(
+      starttime,
+      "hour"
+      )
+    ) %>%
+  dplyr::filter(
+    start_hash != end_hash
+    ) %>%
+  dplyr::group_by(
+    gender,
+    start_hash,
+    end_hash,
+    journey,
+    time
+    ) %>%
+  dplyr::summarise(
+    num = n(),
+    dur = mean(tripduration)
+    ) %>%
+  dplyr::arrange(
+    desc(num)
+    )
+
+# This takes quite a while, so let's save it out as an RData file so we don't have to do it again
+
+save(
+  bikes_agg, 
+  file = "bikes_agg.RData"
+  )
 
 
-```{r load_stns,cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE,include=TRUE}
+```
+
+```{r,eval=TRUE,echo=FALSE,include=FALSE}
+load("bla.RData")
+bikes_agg <- bla
+save(
+  bikes_agg, 
+  file = "bikes_agg.RData"
+  )
+```
+
+### Step Two:
+
+Create a dataframe of all unique journeys
+
+* Load the stations data. This is relatively quick, so I'll just load it from the sql database.
+
+```{r,load_stns,cache=TRUE,echo=TRUE,warning=FALSE,message=FALSE,include=TRUE}
 
 nybikes_db <- src_sqlite(
   "~/Dropbox/R/Citibike/nybikes.db"
@@ -239,7 +398,126 @@ stns_sql <- # convert db table to R dataframe
 
 stns <- collect(stns_sql)
 
+stns
+
 ```
+
+* Create a table of all the unique journeys
+
+```{r}
+journeys <- bikes_agg %>% 
+  dplyr::group_by() %>%
+  dplyr::filter(start_hash != end_hash) %>%
+  dplyr::mutate(
+    start_hash = as.character(start_hash),
+    end_hash = as.character(end_hash)
+    ) %>%
+  dplyr::group_by(
+    start_hash,
+    end_hash,
+    journey
+    ) %>%
+  dplyr::summarise(
+    nobs = n()
+)
+```
+
+This gives `r nrow(journeys)` journeys out of a possible `r journeys$start_hash %>% unique(.) %>% length(.) %>% .^2`; plus it is possible for a journey to start and end at the same station, but we are not interested in those, as there is no way to know where someone has been.
+
+* merge `journeys` and `stns` dataframes to give a table with the complete station and journey data. 
+
+```{r}
+
+
+journeys1 <- merge(
+  journeys,
+  stns,
+  by.x = "start_hash",
+  by.y = "hash"
+  ) %>% 
+  merge(
+    .,
+    stns,
+    by.x = "end_hash",
+    by.y = "hash"
+    ) %>% 
+  dplyr::select(
+    journey,
+    start_hash,
+    start_id = id.x,
+    start_name = name.x,
+    start_lat = lat.x,
+    start_lon = lon.x,
+    end_id = id.y,
+    end_name = name.y,
+    end_lat = lat.y,
+    end_lon = lon.y
+    )
+
+journeys1
+
+```
+
+* Query the google api and get journey times and distance for a subset of journeys.
+
+The google api limits you to 2500 queries a day, so 2500 seems like a good subset of queries to make. Note that since we can just query the journey dataframe we created in the previous step, not the individual journeys themselves, so even though we only have 2500 tries, we will actually be looking at many more journeys. 
+
+```{r}
+
+# First pick a random subset of the dataset. Best to test this with just a few examples, so you know it is working, then query a larger amount when you are confident that you are not going to use all of your free queries in one go!!
+
+journeys_subset <- journeys1 %>%
+  sample_n(
+    10
+    )
+
+# First organise start and end coordinates into a format that the api will like:
+
+fromx <- paste(
+  journeys_subset$start_lat, 
+  journeys_subset$start_lon, 
+  sep =  " "
+  )
+
+toy <- paste(
+  journeys_subset$end_lat, 
+  journeys_subset$end_lon, 
+  sep = " "
+  )
+
+journey_times <- mapdist(
+  from = fromx,
+  to = toy,
+  mode = "bicycling"
+  )
+
+journey_times
+
+# Ok so then bind this to the journeys1 dataframe
+
+journeys_merge <- tbl_df(
+  cbind(
+    journeys_subset,
+    journey_times
+    )
+  )  %>%  
+  dplyr::select(
+    -from,-to,-km,-miles,-minutes,-hours
+    )
+
+journeys_merge
+
+```
+
+
+
+
+
+
+
+
+
+
 
 
 ### Initial exploration
@@ -390,74 +668,8 @@ tapply(
 
 
 
-```{r trip_duration_density_we,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
-ggplot(
-  data = bikes %>%
-    dplyr::mutate(
-      wday = wday(stoptime),
-      we = ifelse(
-        (wday %in% c(1,7)),
-        "Weekend","Weekday"
-        )
-      ),
-  aes(
-    #y = tripduration,
-    x = tripduration,
-    colour = gender,
-    fill = gender
-    )
-  ) + 
-  geom_density(
-    alpha = 0.3
-    ) +
-  scale_x_continuous(
-    limits = c(0,3000)
-    ) +
-  xlab("Trip duration (s)") +
-  facet_wrap(
-    ~we
-    )
-```
-
-```{r tripdensity_we_age,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE,fig.width=14,fig.height=10}
 
 
-ggplot(
-  data = bikes %>%
-    dplyr::mutate(
-      wday = wday(stoptime),
-      we = ifelse(
-        (wday %in% c(1,7)),
-        "Weekend","Weekday"
-        ),
-      age = 2014 - as.numeric(birth_year),
-      age_group = cut(age,c(10,20,30,40,50,60,100))
-      ) %>%
-    dplyr::filter(
-      !is.na(age_group),
-      !is.na(gender)
-      ),
-  aes(
-    #y = tripduration,
-    x = tripduration,
-    colour = gender,
-    fill = gender
-    )
-  ) + 
-  geom_density(
-    aes(y= ..count..),
-    alpha = 0.3
-    ) +
-  scale_x_continuous(
-    limits = c(0,3000)
-    ) +
-  xlab("Trip duration (s)") +
-  facet_grid(
-    we~age_group
-    )+
-  ylab("Count")
-
-```
 
 
 ```{r cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
