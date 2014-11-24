@@ -31,7 +31,7 @@ There are two types of Citibike users: long-term `Subscribers` to the service, a
 Let's start with the basics. Of the `r nrow(bikes)` journeys recorded so-far, men made more than three times as many journeys as women.
 
 
-```{r gender_proportions,cache=FALSE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+```{r gender_proportions,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
 
 # It is possible to call all the data from teh sql database, but much quicker to run it from an RData file
 
@@ -53,7 +53,7 @@ Looking at the plot below, you can see the seasonal dip in short term pass users
 ```{r gender_month_plot,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE,fig.width=9}
 
 ggplot(
-  bla <- bikes %>%
+  bikes %>%
     dplyr::mutate(
       my = format(starttime,"%Y-%m")
       ) %>%
@@ -146,7 +146,7 @@ While there looks to be an increase in the proportion of `Customers` -- short te
 
 So we now know that men use Citibikes proportionally more than women, but is the way that they are using the bikes different? One of the other variables in the dataset, is journey time (`tripduration`) in seconds, this is a good start. Let's start with the numbers:
 
-```{r}
+```{r,echo=TRUE,eval=TRUE,cache=TRUE,include=TRUE,warning=FALSE,message=FALSE}
 
 bikes %>%
   dplyr::group_by(
@@ -163,7 +163,7 @@ So from a simple mean and median, it looks like womens' journeys tend to be long
 
 Let's look at these probability distributions (note that for clarity I have trimmed the data to journeys of less than 3000 seconds or 50 minutes, as the vast majority of journeys are less than this).
 
-```{r trip_duration_density1,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+```{r,trip_duration_density1,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
 
 ggplot(
   data = bikes,
@@ -217,7 +217,7 @@ This suggests a markedly different pattern of use among customers buying short t
 
 Knowing that weekends show a different pattern of usage, how does trip duration differ?
 
-```{r}
+```{r,eval=TRUE,echo=TRUE,cache=TRUE,include=TRUE,message=FALSE,warning=FALSE}
 
 bikes %>%
   dplyr::group_by(
@@ -325,9 +325,9 @@ The google maps api can be queried for distance and cycling journey time between
 
 Aggregate all observation by the journey made, and the hour when it was made:
 
-```{r, eval=FALSE,echo=TRUE,include=TRUE}
+```{r, eval=FALSE,echo=TRUE,cache=TRUE,include=TRUE}
 
-biks_agg <- bikes %>%
+bikes_agg <- bikes %>%
   dplyr::mutate(
     journey = paste(
       start_hash,
@@ -368,12 +368,9 @@ save(
 ```
 
 ```{r,eval=TRUE,echo=FALSE,include=FALSE}
-load("bla.RData")
-bikes_agg <- bla
-save(
-  bikes_agg, 
-  file = "bikes_agg.RData"
-  )
+
+load("bikes_agg.RData")
+
 ```
 
 ### Step Two:
@@ -428,7 +425,6 @@ This gives `r nrow(journeys)` journeys out of a possible `r journeys$start_hash 
 
 ```{r}
 
-
 journeys1 <- merge(
   journeys,
   stns,
@@ -452,7 +448,8 @@ journeys1 <- merge(
     end_name = name.y,
     end_lat = lat.y,
     end_lon = lon.y
-    )
+    ) %>%
+  tbl_df
 
 journeys1
 
@@ -462,7 +459,7 @@ journeys1
 
 The google api limits you to 2500 queries a day, so 2500 seems like a good subset of queries to make. Note that since we can just query the journey dataframe we created in the previous step, not the individual journeys themselves, so even though we only have 2500 tries, we will actually be looking at many more journeys. 
 
-```{r}
+```{r,echo=TRUE,eval=TRUE,cache=TRUE,message=FALSE,warning=FALSE}
 
 # First pick a random subset of the dataset. Best to test this with just a few examples, so you know it is working, then query a larger amount when you are confident that you are not going to use all of your free queries in one go!!
 
@@ -509,16 +506,365 @@ journeys_merge
 
 ```
 
+It's also possible to query to google routing api to get a route for each of these journeys. We can plot this to ensure that we have a good coverage across Manhatten Island, but it can also look really cool!
+
+```{r,eval=TRUE,echo=FALSE,include=FALSE}
+load("journey_route.RData")
+```
 
 
+```{r,eval=FALSE,echo=FALSE,cache=TRUE,include=TRUE,message=FALSE,warning=FALSE}
+
+# Again i've just used 10 unique journeys here.
+
+journey_route <- data.frame() %>% tbl_df
+
+for (i in 1:length(fromx)) {
+  
+  try(
+    journey_route1 <- route(
+      from = fromx,
+      to = toy,
+      mode = "bicycling"
+      )
+    )
+  
+  try(
+    journey_route1 <- cbind(
+      i,
+      journey_route1
+      )
+    )
+  
+  try(
+    journey_route <- rbind(
+      journey_route,
+      journey_route1
+      )
+    )
+  rm(journey_route1)  
+  }
+
+journey_route
+
+```
+
+```{r,echo=TRUE,cache=TRUE,include=FALSE}
+journey_route
+```
+
+```{r journey_route_ggplot,cache=TRUE,fig.width=9,fig.height=9}
+
+ggplot(
+  journey_route %>%
+    dplyr::mutate(
+      no_legs = ave(
+        leg,
+        i,
+        FUN = length
+        ),
+      final = ifelse(
+        leg == no_legs,
+        TRUE,
+        FALSE
+        )
+      ),
+  aes(
+    x = startLon,
+    y = startLat,
+    group = i
+    )
+  )+
+  geom_point(
+    data = journey_route %>%
+      dplyr::filter(leg == 1),
+    aes(
+      x = startLon,
+      y = startLat
+      ),
+    col = "darkblue"
+    )+
+  geom_path(
+    data = journey_route,
+    aes(
+      x = startLon,
+      y = startLat,
+      group = i
+      ),
+    lwd = 1.5,
+    alpha = 0.2,
+    col = "red"
+    )
+
+```
+
+```{r journey_plot_ggmap,cache=TRUE,fig.width=9,fig.height=9}
+
+centre <- c(
+  lon = mean(stns$lon),
+  lat = mean(stns$lat)
+  )
 
 
+nymap_stamen_to <- get_map(
+  location = centre, 
+  source = "stamen", 
+  maptype = "toner", 
+  zoom = 13
+  )
+
+ggmap(
+  nymap_stamen_to, 
+  extent = 'device',
+  legend="bottomright"
+  )+
+  geom_point(
+    data = journey_route %>%
+      dplyr::filter(
+        leg == 1
+        ),
+    aes(
+      x = startLon,
+      y = startLat
+      ),
+    col = "blue",
+    size = 2
+    )+
+  geom_path(
+    data = journey_route,
+    aes(
+      x = startLon,
+      y = startLat,
+      group = i
+      ),
+    lwd = 1.5,
+    alpha = 0.3,
+    col = "red"
+    )
+
+```
+
+So it looks like we have a reasonable coverage of Manhatten island. You could always query the api on multiple days and combine the output if you wanted to include more than 2500 of the 110,000 possible journeys.
+
+* Join `journeys_merge` data with actual journey data from `bikes_agg`.
 
 
+```{r,eval=TRUE,echo=TRUE,include=TRUE,message=FALSE,warning=FALSE,cache=TRUE}
+
+bikes_journey_join <- bikes_agg %>%
+  inner_join(
+    journeys1,
+    by =  "journey"
+    ) %>%
+  group_by() %>%
+  mutate(
+    hour = hour(time),
+    we = ifelse(
+      (wday(time) %in% c(1,7)),
+      "Weekend",
+      "Weekday"
+      )
+    )
+
+bikes_journey_join
+
+```
+
+Now that we have that data combined, we can produce some plots
+
+First, how does all this data look when separated by gender? In  the following plot the solid line is a 1:1 lined between the journey time predicetd by teh google api, and the actual journey time in seconds. The dashed line is an actual regression line from the data.
+
+```{r,fig.width=9}
+
+ggplot(
+  data = bikes_journey_join %>%
+    filter(
+      !is.na(gender)#,
+      #dur < 3000
+      ) %>%
+    mutate(
+      hour = hour(time),
+      we = ifelse(
+        (wday(time) %in% c(1,7)),
+        "Weekend",
+        "Weekday"
+        )
+      ),
+  aes(
+    x = seconds,
+    y = dur,
+    color = gender
+    )
+  )+
+  geom_point(
+    alpha = 0.05
+    )+
+  geom_smooth(
+    method = "lm",
+    se = FALSE,
+    col = "darkblue",
+    lty = 2
+    )+
+  geom_abline(
+    aes(
+      a = 1,
+      b = 1
+      )
+    )+
+  facet_grid(
+    we~gender
+    )+
+  coord_cartesian(
+    ylim = c(0,3000)
+    )+
+  scale_color_discrete(
+    guide = "none"
+    )+
+  xlab("Predicted journey duration (s)")+
+  ylab("Actual journey duration (s)")
+
+```
+
+The first thing we can take away from this plot is that the google api is quite optimistic about its predictions of cycling journey time sin New York City: most journeys take longer than it predicts; although of course, it is not clear whether this is simply because people are not taking the most direct route.
+
+The second thing that comes out is that for men, it appears that for journeys of longer than 2000 seconds during the week, actual journey times are shorter than the google prediction. Note that this is just a guide, this model would not satisfy the usual assumptions of a linear model.
+
+The regression lines tend to suggest that mens' journey time on the same journeys are simply shorter than womens'. We can see this more clearly in a boxplot:
+
+```{r}
+
+ggplot(
+  data = bikes_journey_join %>%
+    filter(
+      !is.na(gender)#,
+      #dur < 3000
+      ) %>%
+    mutate(
+      hour = hour(time),
+      we = ifelse(
+        (wday(time) %in% c(1,7)),
+        "Weekend",
+        "Weekday"
+        )
+      ),
+  aes(
+    x = gender,
+    y = dur,
+    color = gender,
+    fill = gender,
+    group = gender
+    )
+  )+
+  geom_boxplot(
+    alpha = 0.3,
+    outlier.size = 0
+    )+
+  facet_wrap(
+    ~we
+    )+
+  coord_cartesian(
+    ylim = c(0,2200)
+    )
+
+```
+
+However, it would better if we could look at the average of each journey time for each journey against each other for men and women, as the plots above are not from a uniform number of journeys for each sex.
+
+```{r}
+
+bikes_journey_mean <- bikes_journey_join %>%
+  dplyr::filter(
+    dur < seconds,
+    !is.na(gender)
+    ) %>%
+  dplyr::group_by(
+    seconds,
+    start_hash.x,
+    end_hash,
+    gender,
+    journey
+    ) %>%
+  dplyr::summarise(
+    dur = median(dur),
+    n = n()
+    ) %>%
+  dplyr::filter(
+    n > 10
+    ) %>%
+  dplyr::arrange(
+    journey,
+    gender
+    ) %>%
+  dplyr::group_by() %>%
+  dplyr::mutate(
+    gender1 = lag(as.numeric(gender),1),
+    gender2 = abs(as.numeric(gender) - gender1)
+    ) %>%
+  dplyr::filter(
+    gender2 == 1
+    ) %>%
+  dplyr::group_by(
+    journey
+    ) %>%
+  dplyr::mutate(
+    n = n(),
+    diff = abs(seconds - dur)
+    ) %>%
+  dplyr::filter(
+    n == 2
+    ) %>% dplyr::select(
+    -gender1,
+    -gender2,
+    -n
+    )
+```
+
+```{r,fig.height=10,fig.width=6,cache=TRUE}
+
+ggplot(
+  bikes_journey_mean %>%
+    group_by() %>%
+    mutate(
+      journey = factor(
+        journey, 
+        levels = bikes_journey_mean$journey[order(bikes_journey_mean$dur)]
+        )
+      ),
+  aes(
+    x = dur,
+    y = journey,
+    colour = gender,
+    #group = journey,
+    order = dur
+    )
+  )+
+  geom_point()
 
 
+```
 
 
+```{r,cache=TRUE}
+
+ggplot(
+  bikes_journey_mean,
+  aes(
+    x = seconds,
+    y = dur,
+    colour = gender
+    )
+  )+
+  geom_point()+
+  geom_abline(
+    a = 1, b = 1
+    )+
+  geom_smooth()+
+  facet_wrap(~gender)+
+  xlab("Predicted journey duration (s)")+
+  ylab("Actual journey duration (s)")
+
+
+```
 
 ### Initial exploration
 

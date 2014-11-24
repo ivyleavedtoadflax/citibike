@@ -1,0 +1,345 @@
+---
+title: "Is CitiBike an old boy's club?'"
+author: "Matthew Upson"
+date: "02/11/2014"
+output:
+  html_document:
+    theme: spacelab
+  pdf_document: default
+---
+
+```{r load_libraries,include=TRUE,echo=FALSE,message=FALSE,warning=FALSE,include=TRUE}
+require(plyr)
+require(dplyr)
+require(lubridate)
+#require(testthat)
+#require(reshape2)
+require(ggplot2)
+#require(ggmap)
+#require(randomForest)
+require(xtable)
+
+load("bikes.RData")
+```
+
+One of the first things you notice when drilling down into the New York Citibike data, is that there are a lot more male users than female. It's quite a striking difference between the sexes, and has been picked up in the [media](http://nypost.com/2014/05/09/majority-of-citi-bike-users-are-men-study/). In this post I'm going to look at the way Citibike usage differs across the sexes.
+
+There are two types of Citibike users: long-term `Subscribers` to the service, and short term `Customers` who might only buy a weekly pass. Limited information is collected from pass buyers, but `Subscribers` are asked for their gender and `birth_year`, so it is possible to drill into this question a little.
+
+### Proportion of users
+
+Let's start with the basics. Of the `r nrow(bikes)` journeys recorded so-far, men made more than three times as many journeys as women.
+
+
+```{r gender_proportions,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE}
+
+
+bikes %>%
+  dplyr::group_by(
+    gender
+    ) %>%
+  dplyr::summarise(
+    count = n(),
+    prop = paste(
+      round(
+        (n()/nrow(bikes))*100
+        )
+      )
+    )
+
+```
+
+So women have definitely been using the service less, but perhaps they have been slower to adopt the scheme? How is the proportion of total users from each sex changing over time?
+
+Looking at the plot below, you can see the seasonal dip in short term pass users over winter (the grey region), and a consequent increase in the proportion of male users, but the proportion of female users is fairly constant at around 20%.
+
+```{r gender_month_plot,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE,fig.width=9}
+
+ggplot(
+  bikes %>%
+    dplyr::mutate(
+      my = format(starttime,"%Y-%m")
+      ) %>%
+    dplyr::group_by(
+      my
+      ) %>%
+    dplyr::mutate(
+      month_total = n()
+      ) %>%
+    dplyr::group_by(
+      gender,
+      add = TRUE
+      ) %>%
+    dplyr::mutate(
+      prop = (n()/month_total)*100
+      ) %>%
+    dplyr::summarise(
+      prop = mean(prop)
+      ),
+  aes(
+    x = my,
+    y = prop,
+    fill = gender,
+    group = gender,
+    colour = gender
+    )
+  )+
+  geom_area(
+    alpha = 0.3
+    )+
+  ylab("Proportion of users (%)")+
+  xlab("Year and Month")
+
+```
+
+Since many people seem to use Citibikes to get to work Monday - Friday, usage patterns may change at the weekend...
+
+```{r gender_month_plot1,cache=TRUE,echo=TRUE,message=FALSE,warning=FALSE,include=TRUE,fig.width=14}
+
+ggplot(
+  bikes %>%
+    dplyr::mutate(
+      my = format(starttime,"%Y-%m"),
+      wday = wday(starttime),
+      we = ifelse(
+        wday %in% c(1,7),
+        "Weekend",
+        "Weekday"
+        )
+      ) %>%
+    dplyr::group_by(
+      my,
+      we
+      ) %>%
+    dplyr::mutate(
+      month_total = n()
+      ) %>%
+    dplyr::group_by(
+      gender,
+      add = TRUE
+      ) %>%
+    dplyr::mutate(
+      prop = (n()/month_total)*100
+      ) %>%
+    dplyr::summarise(
+      prop = mean(prop)
+      ),
+  aes(
+    x = my,
+    y = prop,
+    fill = gender,
+    group = gender,
+    colour = gender
+    )
+  )+
+  geom_area(
+    alpha = 0.3
+    )+
+  ylab("Proportion of users (%)")+
+  xlab("Year and Month")+
+  facet_wrap(
+    ~we
+    )
+
+```
+
+While there looks to be an increase in the proportion of `Customers` -- short term pass holders -- at the weekend, especially in the summer months, the overall proportion of female riders remains fairly constant at around 20%.
+
+### Journey times
+
+So we now know that men use Citibikes proportionally more than women, but is the way that they are using the bikes different? One of the other variables in the dataset, is journey time (`tripduration`) in seconds, this is a good start. Let's start with the numbers:
+
+```{r,echo=TRUE,eval=TRUE,cache=TRUE,include=TRUE,warning=FALSE,message=FALSE}
+
+bikes %>%
+  dplyr::group_by(
+    gender
+    ) %>%
+  dplyr::summarise(
+    mean = round(mean(tripduration)),
+    median = median(tripduration)
+    )
+
+```
+
+So from a simple mean and median, it looks like womens' journeys tend to be longer than mens', but both are much shorter than the `NA`s - the unknowns which relate to short term pass holders, for whom data is not recorded. It is also clear that there is some serious skew to the distributions of journeys times, as the medians are not particularly close to the means.
+
+Let's look at these probability distributions (note that for clarity I have trimmed the data to journeys of less than 3000 seconds or 50 minutes, as the vast majority of journeys are less than this).
+
+```{r,trip_duration_density1,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+ggplot(
+  data = bikes,
+  aes(
+    x = tripduration,
+    colour = gender,
+    fill = gender,
+    )
+  ) + 
+  geom_density(
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)")
+
+```
+
+OK...so this is looking a bit more interesting. Two things come out of this plot. Firstly it is clear that the distribution of female journey times matches fairly closely to the distribution of male journey times: most journeys take less than around 500 seconds (about 8 minutes and 20 seconds) - although most female journeys take longer than most male journeys:
+
+
+```{r trip_duration_density,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+ggplot(
+  data = bikes,
+  aes(
+    x = tripduration,
+    colour = gender,
+    fill = gender,
+    )
+  ) + 
+  geom_density(
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)") +
+  coord_cartesian(
+    xlim = c(0,750),
+    ylim = c(0.001,0.0014)
+    )
+
+```
+
+
+There is much more of a lag to the curve compared to the male curve, and in general, female journey times are longer than male journey times. Of equal interest is the fact that the unknowns - represented by the grey shading - show a markedly different distribution. Although skewed, the distribution is much more symmetrical, with the most common journey time around 1250 seconds.
+
+This suggests a markedly different pattern of use among customers buying short term passes for Citibikes. This makes sense, as the assumption would be that someone paying a subscription to Citibike is using the service regularly -- i.e. commuting, whilst short term pass buyers are more likely to be occasional users or tourists. This is something we can explore in more detail.
+
+Knowing that weekends show a different pattern of usage, how does trip duration differ?
+
+```{r,eval=TRUE,echo=TRUE,cache=TRUE,include=TRUE,message=FALSE,warning=FALSE}
+
+bikes %>%
+  dplyr::group_by(
+    gender,
+    we = ifelse(
+      wday(starttime) %in% c(1,7),
+      "Weekend",
+      "Weekday"
+      )
+    ) %>%
+  dplyr::summarise(
+    mean = round(mean(tripduration)),
+    median = median(tripduration)
+    )
+
+```
+
+So journey times tend to be longer across the board - what about the distributions? 
+
+```{r trip_duration_density_we,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE,fig.width = 10}
+
+ggplot(
+  data = bikes %>%
+    dplyr::mutate(
+      wday = wday(stoptime),
+      we = ifelse(
+        (wday %in% c(1,7)),
+        "Weekend",
+        "Weekday"
+        )
+      ),
+  aes(
+    x = tripduration,
+    colour = gender,
+    fill = gender
+    )
+  ) + 
+  geom_density(
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)") +
+  facet_wrap(
+    ~we
+    )
+
+```
+
+So yes, at the weekend, the peaks are lower but distributed further to the right. This is what we might expect  as we might expect, people tend to either take longer journeys, or travel at a more leisurely pace at the weekend, or both.
+
+One of the other variable recorded among regular subscribers, is year of birth. How does this affect things? In this case I've cut the data into bins of 0-10, 10-20, 20-30, 30-40, 40-50, 50-60, and 60-100 years; and again considered both weekdays and weekends. In this probabilitys, distribution, I have presented absolute values instead of probabilities, so you get a sense of the number of journeys within each group.
+
+
+```{r tripdensity_we_age,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE,fig.width=14,fig.height=10}
+
+
+ggplot(
+  data = bikes %>%
+     dplyr::mutate(
+      wday = wday(stoptime),
+      we = ifelse(
+        (wday %in% c(1,7)),
+        "Weekend","Weekday"
+        ),
+      age = 2014 - as.numeric(birth_year),
+      age_group = cut(age,c(10,20,30,40,50,60,100))
+      ) %>%
+    dplyr::filter(
+      !is.na(age_group),
+      !is.na(gender)
+      ),
+  aes(
+    #y = tripduration,
+    x = tripduration,
+    colour = gender,
+    fill = gender
+    )
+  ) + 
+  geom_density(
+    aes(y= ..count..),
+    alpha = 0.3
+    ) +
+  scale_x_continuous(
+    limits = c(0,3000)
+    ) +
+  xlab("Trip duration (s)") +
+  facet_grid(
+    we~age_group
+    )+
+  ylab("Count")
+
+```
+
+At the weekend, many fewer people travel, and the distribution of journey times is less strongly peaked. All commonsense if we accept the idea that most people who use citibike are doing so to commute.
+
+This plot hints at something else: there were more journeys by 50-60 year old men than women of any single age group.
+
+```{r tripdensity_we_age_table,cache=TRUE,message=FALSE,warning=FALSE,include=TRUE,echo=TRUE}
+
+bikes %>%
+     dplyr::mutate(
+      wday = wday(stoptime),
+      we = ifelse(
+        (wday %in% c(1,7)),
+        "Weekend","Weekday"
+        ),
+      age = 2014 - as.numeric(birth_year),
+      age_group = cut(age,c(10,20,30,40,50,60,100))
+      ) %>%
+    dplyr::filter(
+      !is.na(age_group),
+      !is.na(gender)
+      ) %>% 
+      group_by(
+      age_group,gender
+      ) %>% 
+      summarise(n=n())
+
+```
+

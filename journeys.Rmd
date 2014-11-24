@@ -226,7 +226,14 @@ for (i in 1:length(fromx)) {
   
   }
 
+save(
+  journey_route,
+  file = "journey_route.RData"
+  )
 
+```
+
+```{r}
 nymap_stamen_to <- get_map(
   location = centre, 
   source = "stamen", 
@@ -271,6 +278,7 @@ ggmap(
     )
 
 ```
+
 ```{r,fig.width=4,fig.height=4}
 ggplot(
   journey_route,
@@ -286,18 +294,21 @@ ggplot(
     aes(
       x = startLon,
       y = startLat
-      )
+      ),
+    col = "darkblue"
     )+
   geom_path(
-    lwd = 1,
-    alpha = 0.3,
+    data = journey_route,
+    aes(
+      x = startLon,
+      y = startLat,
+      group = i
+      ),
+    lwd = 2,
+    alpha = 0.2,
     col = "red"
-    )+
-  theme_bw()
-
-
+    )
 ```
-
 
 ```{r,fig.width=12,fig.height=12}
 
